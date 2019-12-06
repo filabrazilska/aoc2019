@@ -32,11 +32,12 @@ main([]) ->
     Line = io:get_line(""),
     TrimmedLine = string:trim(Line, both, "\n"),
     RawTape = string:split(TrimmedLine, ",", all),
-    Tape =
-        array:set(1, 12,
-                  array:set(2, 2,
-                               array:from_list([list_to_integer(X) || X <- RawTape])
-        ))
-    ,
+    Tape = array:from_list([list_to_integer(X) || X <- RawTape]),
+    lists:foreach( fun( Noun ) ->
+        lists:foreach( fun( Verb ) ->
+            InputTape = array:set(1, Noun, array:set(2, Verb, Tape) ),
+            io:format("~B ~B ~B~n", [Noun, Verb, array:get(0, run_program( InputTape, 0, OpTable ))])
+        end, lists:seq(0,99) )
+    end, lists:seq(0, 99) ),
     NewTape = run_program(Tape, 0, OpTable),
     io:format("~B~n", [array:get(0,NewTape)]).
