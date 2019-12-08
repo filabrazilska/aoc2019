@@ -1,24 +1,24 @@
 #!/usr/bin/env escript
 
-move_dir(_, 0, {X,Y}=Pos, Flavour) ->
+move_dir(_, 0, {X,Y}=Pos, CurrLen, Flavour) ->
     case Flavour of
         lay ->
-            put(Pos, 1);
+            put(Pos, CurrLen);
         check ->
             case get(Pos) of
                 undefined -> noop;
-                X when X >= 1 -> io:format("==+== {~B,~B}, distance: ~B~n", [X, Y, abs(X)+abs(Y)])
+                L when L >= 0 -> io:format("==+== {~B,~B}, distance: ~B~n", [X, Y, L+CurrLen])
             end
     end,
-    Pos;
-move_dir(Dir, Len, {X,Y}=Pos, Flavour) ->
+    {Pos, CurrLen};
+move_dir(Dir, Len, {X,Y}=Pos, CurrLen, Flavour) ->
     case Flavour of
         lay ->
-            put(Pos, 1);
+            put(Pos, CurrLen);
         check ->
             case get(Pos) of
                 undefined -> noop;
-                1 -> io:format("==+== {~B,~B}, distance: ~B~n", [X, Y, abs(X)+abs(Y)])
+                L when L >= 0 -> io:format("==+== {~B,~B}, distance: ~B~n", [X, Y, L+CurrLen])
             end
     end,
     NewPos = case Dir of
@@ -27,16 +27,16 @@ move_dir(Dir, Len, {X,Y}=Pos, Flavour) ->
         $U -> {X,Y-1};
         $D -> {X,Y+1}
     end,
-    move_dir(Dir, Len-1, NewPos, Flavour).
+    move_dir(Dir, Len-1, NewPos, CurrLen+1, Flavour).
 
-move([Dir|LenString], {X,Y} = Pos, Flavour)->
+move([Dir|LenString], {{X,Y} = Pos, CurrLen}, Flavour)->
     Len = list_to_integer(LenString),
-    {NewX, NewY} = NewPos = move_dir(Dir, Len, Pos, Flavour),
-    io:format("{~B,~B} ~c -> ~B {~B,~B}~n", [X,Y, Dir, Len, NewX, NewY]),
-    NewPos.
+    {{NewX, NewY} = NewPos, NewLen} = move_dir(Dir, Len, Pos, CurrLen, Flavour),
+    io:format("{~B,~B} ~c -> ~B {~B,~B}, total: ~B~n", [X,Y, Dir, Len, NewX, NewY, NewLen]),
+    {NewPos, NewLen}.
 
 lay_wire(Wire, Flavour) ->
-    lists:foldl( fun (Op, CurPos) -> move(Op, CurPos, Flavour) end, {0,0}, Wire ).
+    lists:foldl( fun (Op, Cur) -> move(Op, Cur, Flavour) end, {{0,0}, 0}, Wire ).
 
 main([]) ->
     Line = io:get_line(""),
