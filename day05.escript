@@ -61,6 +61,44 @@ add(Tape, Position, OpParams) ->
 mult(Tape, Position, OpParams) ->
     num_op(Tape, Position, fun(A,B) -> A*B end, OpParams).
 
+jtrue(Tape, Position, OpParams) ->
+    Value = get_param(Tape, Position, 1, OpParams),
+    NewPosition = get_param(Tape, Position, 2, OpParams),
+    case Value of
+        0 -> {ok, Tape, Position + 3};
+        _ -> {ok, Tape, NewPosition}
+    end.
+
+jfalse(Tape, Position, OpParams) ->
+    Value = get_param(Tape, Position, 1, OpParams),
+    NewPosition = get_param(Tape, Position, 2, OpParams),
+    case Value of
+        0 -> {ok, Tape, NewPosition};
+        _ -> {ok, Tape, Position + 3}
+    end.
+
+less(Tape, Position, OpParams) ->
+    A = get_param(Tape, Position, 1, OpParams),
+    B = get_param(Tape, Position, 2, OpParams),
+    WritePosition = array:get(Position+3, Tape),
+    ToStore = case A<B of
+                  true -> 1;
+                  _ -> 0
+              end,
+    NewTape = array:set(WritePosition, ToStore, Tape),
+    {ok, NewTape, Position+4}.
+
+equals(Tape, Position, OpParams) ->
+    A = get_param(Tape, Position, 1, OpParams),
+    B = get_param(Tape, Position, 2, OpParams),
+    WritePosition = array:get(Position+3, Tape),
+    ToStore = case A =:= B of
+                  true -> 1;
+                  _ -> 0
+              end,
+    NewTape = array:set(WritePosition, ToStore, Tape),
+    {ok, NewTape, Position+4}.
+
 stop(_, _, _) -> stop.
 
 input(Tape, Position, _OpParams) ->
@@ -81,6 +119,10 @@ format_opcode(1) -> "+";
 format_opcode(2) -> "*";
 format_opcode(3) -> ">>";
 format_opcode(4) -> "<<";
+format_opcode(5) -> "je";
+format_opcode(6) -> "jne";
+format_opcode(7) -> "le";
+format_opcode(8) -> "eq";
 format_opcode(99) -> ";";
 format_opcode(_) -> "?".
 
@@ -88,7 +130,7 @@ run_program(Tape, Position, OpTable) ->
     FullOp = array:get(Position, Tape),
     OpCode = FullOp rem 100,
     OpParams = FullOp div 100,
-    OpCodeString = format_opcode(OpCode),
+    %% OpCodeString = format_opcode(OpCode),
     %% io:format("FullOp: ~B (~B), OpCode: ~s, OpParams: ~B~n", [FullOp, Position, OpCodeString, OpParams]),
     Op = maps:get(OpCode, OpTable),
     case Op(Tape, Position, OpParams) of
@@ -103,10 +145,14 @@ main([]) ->
         2  => fun(Tape, Position, OpParams) -> mult(Tape,   Position, OpParams) end,
         3  => fun(Tape, Position, OpParams) -> input(Tape,  Position, OpParams) end,
         4  => fun(Tape, Position, OpParams) -> output(Tape, Position, OpParams) end,
+        5  => fun(Tape, Position, OpParams) -> jtrue(Tape,  Position, OpParams) end,
+        6  => fun(Tape, Position, OpParams) -> jfalse(Tape, Position, OpParams) end,
+        7  => fun(Tape, Position, OpParams) -> less(Tape,   Position, OpParams) end,
+        8  => fun(Tape, Position, OpParams) -> equals(Tape, Position, OpParams) end,
         99 => fun(Tape, Position, OpParams) -> stop(Tape,   Position, OpParams) end
     },
     Line = io:get_line(""),
     TrimmedLine = string:trim(Line, both, "\n"),
     RawTape = string:split(TrimmedLine, ",", all),
     Tape = array:from_list([list_to_integer(X) || X <- RawTape]),
-    NewTape = run_program(Tape, 0, OpTable).
+    run_program(Tape, 0, OpTable).
