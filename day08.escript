@@ -7,6 +7,5 @@
 main([FileName]) ->
     true = code:add_pathz("./ebin"),
     {ok, Layers} = sif:load_image(FileName, 25, 6),
-    {ok, CheckSum} = sif:checksum(Layers),
-    io:format("~w~n", [CheckSum]),
+    ok = sif:render(Layers, 25, 6),
     ok.
