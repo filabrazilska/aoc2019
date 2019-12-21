@@ -1,6 +1,6 @@
 -module(intcode).
 
--export([run_program/3]).
+-export([run_program/3, run_program_until_end/3]).
 -export([copy_config/1, read_tape/1]).
 -export_type([config/0]).
 
@@ -12,7 +12,7 @@
                 {ok,NC,I,O}
         end).
 
--record(config, {tape, position, rel_base}).
+-record(config, {tape, position = 0, rel_base = 0}).
 -opaque(config() :: #config{}).
 
 -spec read_tape(string()) -> {ok, config()}.
@@ -21,13 +21,13 @@ read_tape(FileName) ->
     Line = io:get_line(IO,""),
     TrimmedLine = string:trim(Line, both, "\n"),
     RawTape = string:split(TrimmedLine, ",", all),
-    Tape = array:from_list([list_to_integer(X) || X <- RawTape]),
+    Tape = array:from_list([list_to_integer(X) || X <- RawTape], 0),
     {ok, #config{tape = Tape, position = 0}}.
 
 -spec copy_config(config()) -> config().
 copy_config(C) ->
     Size = array:size(C#config.tape),
-    NewTape0=array:new(Size),
+    NewTape0=array:new([{default,0},{size,Size},{fixed,false}]),
     NewTape=lists:foldl(fun(I,Acc) ->
                             array:set(I, array:get(I, C#config.tape), Acc)
                         end, NewTape0, lists:seq(0, Size-1)),
@@ -42,8 +42,8 @@ run_program(Config, Input, Output) ->
     FullOp = array:get(Position, Tape),
     OpCode = FullOp rem 100,
     OpParams = FullOp div 100,
-    %% OpCodeString = format_opcode(OpCode),
-    %% io:format("FullOp: ~B (~B), OpCode: ~s, OpParams: ~B~n", [FullOp, Position, OpCodeString, OpParams]),
+    OpCodeString = format_opcode(OpCode),
+    io:format("FullOp: ~B (~B), OpCode: ~s, OpParams: ~p~n", [FullOp, Position, OpCodeString, OpParams]),
     Op = maps:get(OpCode, optable()),
     case Op(Config, OpParams, Input, Output) of
         {ok, NewConfig, NewInput, NewOutput} ->
@@ -51,6 +51,18 @@ run_program(Config, Input, Output) ->
         {stop, Out} -> {stop, lists:reverse(Out)};
         {input, _NewConfig, _NewInput, _NewOutput} = I -> I;
         {output, _NewConfig, _NewInput, _NewOutput} = O -> O
+    end.
+
+-spec run_program_until_end(#config{}, [integer()], [integer()]) -> {ok, [integer()]}.
+run_program_until_end(Config, Input, Output) ->
+    case run_program(Config, Input, Output) of
+        {ok, NewConfig, NewInput, NewOutput} ->
+            run_program_until_end(NewConfig, NewInput, NewOutput);
+        {stop, Out} -> {ok, lists:reverse(Out)};
+        {input, NewConfig, NewInput, NewOutput} ->
+            run_program_until_end(NewConfig, NewInput, NewOutput);
+        {output, NewConfig, NewInput, NewOutput} ->
+            run_program_until_end(NewConfig, NewInput, NewOutput)
     end.
 
 optable() ->
@@ -75,22 +87,17 @@ optable() ->
         99 => fun(Config, OpParams, I, O) -> ?FILL_IO(stop(Config, OpParams), I, O) end
     }.
 
-get_param(#config{tape = Tape, position = Position}, Offset, OpParams) -> get_param(Tape, Position, Offset, OpParams).
-get_param(Tape, Position, Offset, OpParams) ->
-    Mode = case Offset of
-        1 -> OpParams rem 10;
-        2 -> OpParams div 10
-    end,
-    case Mode of
-        0 ->
-            Value = array:get(array:get(Position+Offset, Tape), Tape),
-            %% io:format("P(~B->~B)", [array:get(Position+Offset, Tape),Value]),
-            Value;
-        1 ->
-            Value = array:get(Position+Offset, Tape),
-            %% io:format("I(~B)", [Value]),
-            Value
-    end.
+get_position(#config{tape = Tape, position = Position}, Offset, 0) -> array:get(Position + Offset, Tape);
+get_position(#config{position = Position}, Offset, 1) -> Position + Offset;
+get_position(#config{tape = Tape, position = Position, rel_base = RelBase}, Offset, 2) -> array:get(Position + Offset, Tape) + RelBase.
+
+%% get_mode(OpParams, Offset)
+get_mode(OpParams, 1) -> OpParams rem 10;
+get_mode(OpParams, 2) -> (OpParams rem 100) div 10;
+get_mode(OpParams, 3) -> OpParams div 100.
+
+get_param(#config{tape = Tape} = Config, Offset, OpParams) ->
+    array:get(get_position(Config, Offset, get_mode(OpParams, Offset)), Tape).
 
 num_op(#config{tape = Tape, position = Position} = Config, Op, OpParams) ->
     %% io:format("(~B,~B,~B)",
@@ -101,7 +108,7 @@ num_op(#config{tape = Tape, position = Position} = Config, Op, OpParams) ->
     A = get_param(Config, 1, OpParams),
     %% io:format(", B="),
     B = get_param(Config, 2, OpParams),
-    WritePosition = array:get(Position+3, Tape),
+    WritePosition = get_position(Config, 3, get_mode(OpParams, 3)),
     NewValue = Op(A, B),
     %% io:format(", WritePosition: ~B, Value: ~B -> ~B", [WritePosition, array:get(WritePosition, Tape), NewValue]),
     NewTape = array:set(WritePosition, NewValue, Tape),
@@ -133,7 +140,7 @@ jfalse(#config{position = Position} = Config, OpParams) ->
 less(#config{tape = Tape, position = Position} = Config, OpParams) ->
     A = get_param(Config, 1, OpParams),
     B = get_param(Config, 2, OpParams),
-    WritePosition = array:get(Position+3, Tape),
+    WritePosition = get_position(Config, 3, get_mode(OpParams, 3)),
     ToStore = case A<B of
                   true -> 1;
                   _ -> 0
@@ -144,7 +151,7 @@ less(#config{tape = Tape, position = Position} = Config, OpParams) ->
 equals(#config{tape = Tape, position = Position} = Config, OpParams) ->
     A = get_param(Config, 1, OpParams),
     B = get_param(Config, 2, OpParams),
-    WritePosition = array:get(Position+3, Tape),
+    WritePosition = get_position(Config, 3, get_mode(OpParams, 3)),
     ToStore = case A =:= B of
                   true -> 1;
                   _ -> 0
@@ -155,22 +162,19 @@ equals(#config{tape = Tape, position = Position} = Config, OpParams) ->
 stop(_, _) -> stop.
 
 input(Config, _OpParams, []) -> {input, Config}; %% Yield if there is no input ready
-input(#config{tape = Tape, position = Position} = Config, _OpParams, [InputValue | NewInput]) ->
-    WritePosition = array:get(Position+1, Tape),
-    %% io:format("(~B), A=I(~B), WritePosition: ~B, InputValue: ~B~n", [array:get(Position+1, Tape), WritePosition, WritePosition, InputValue]),
+input(#config{tape = Tape, position = Position} = Config, OpParams, [InputValue | NewInput]) ->
+    WritePosition = get_position(Config, 1, get_mode(OpParams, 1)),
     NewTape = array:set(WritePosition, InputValue, Tape),
-    %% io:nl(),
     {ok, Config#config{tape = NewTape, position = Position + 2}, NewInput}.
 
 output(#config{tape = Tape, position = Position} = Config, OpParams, Output) ->
     Value = get_param(Config, 1, OpParams),
-    %% io:nl(),
     io:format("~B~n", [Value]),
     {output, Config#config{tape = Tape, position = Position + 2}, [Value | Output]}.
 
-adjust_rel_base(#config{rel_base = RelBase} = Config, OpParams) ->
+adjust_rel_base(#config{rel_base = RelBase, position = Position} = Config, OpParams) ->
     Value = get_param(Config, 1, OpParams),
-    {ok, Config#config{rel_base = RelBase + Value}}.
+    {ok, Config#config{rel_base = RelBase + Value, position = Position + 2}}.
 
 format_opcode(1) -> "+";
 format_opcode(2) -> "*";
@@ -180,6 +184,7 @@ format_opcode(5) -> "je";
 format_opcode(6) -> "jne";
 format_opcode(7) -> "le";
 format_opcode(8) -> "eq";
+format_opcode(9) -> "adjb";
 format_opcode(99) -> ";";
 format_opcode(_) -> "?".
 
