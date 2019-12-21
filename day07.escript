@@ -3,29 +3,25 @@
 perms([]) -> [[]];
 perms(L)  -> [[H|T] || H <- L, T <- perms(L--[H])].
 
-inner_amplify([{Tape, Position, Input, OutputSoFar} | RestOfMachines] = Params) ->
-    case intcode:run_program(Tape, Position, Input, OutputSoFar) of
+inner_amplify([{Config, Input, OutputSoFar} | RestOfMachines]) ->
+    case intcode:run_program(Config, Input, OutputSoFar) of
         {stop, Output} ->
             {ok, Output};
-        {input, NewTape, NewPosition, NewInput, NewOutput} = Y ->
-            inner_amplify(RestOfMachines ++ [{NewTape, NewPosition, NewInput, NewOutput}]); % for 5 machines the '++' operation is OK
-        {output, NewTape, NewPosition, NewInput, [OutputValue | NewOutput]} = X ->
-            [{NextTape, NextPosition, NextInput, NextOutput} | RestRestOfMachines] = RestOfMachines,
-            inner_amplify([{NextTape, NextPosition, NextInput ++ [OutputValue], NextOutput} | RestRestOfMachines] ++ [{NewTape, NewPosition, NewInput, NewOutput}])
+        {input, NewConfig, NewInput, NewOutput} ->
+            inner_amplify(RestOfMachines ++ [{NewConfig, NewInput, NewOutput}]); % for 5 machines the '++' operation is OK
+        {output, NewConfig, NewInput, [OutputValue | NewOutput]} ->
+            [{NextConfig, NextInput, NextOutput} | RestRestOfMachines] = RestOfMachines,
+            inner_amplify([{NextConfig, NextInput ++ [OutputValue], NextOutput} | RestRestOfMachines] ++ [{NewConfig, NewInput, NewOutput}])
     end. 
 
-amplify(Tape, [First | AmplifierSetup]) ->
-    InitialConfigs = [ {Tape, 0, [First, 0], []} | [{Tape, 0, [I], []} || I <- AmplifierSetup] ],
+amplify(Config, [First | AmplifierSetup]) ->
+    InitialConfigs = [ {intcode:copy_config(Config), [First, 0], []} | [{intcode:copy_config(Config), [I], []} || I <- AmplifierSetup] ],
     {ok, Output} = inner_amplify(InitialConfigs), 
     io:format(">>>~p~n", [Output]).
 
 main([FileName]) ->
     true = code:add_pathz("./ebin"),
-    {ok, IO} = file:open(FileName, [read]),
-    Line = io:get_line(IO,""),
-    TrimmedLine = string:trim(Line, both, "\n"),
-    RawTape = string:split(TrimmedLine, ",", all),
-    Tape = array:from_list([list_to_integer(X) || X <- RawTape]),
+    {ok, Config} = intcode:read_tape(FileName),
     Perms = perms(lists:seq(5,9)),
-    lists:foreach(fun(P) -> amplify(Tape, P) end, Perms),
+    lists:foreach(fun(P) -> amplify(Config, P) end, Perms),
     ok.
