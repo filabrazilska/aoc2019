@@ -42,8 +42,8 @@ run_program(Config, Input, Output) ->
     FullOp = array:get(Position, Tape),
     OpCode = FullOp rem 100,
     OpParams = FullOp div 100,
-    OpCodeString = format_opcode(OpCode),
-    io:format("FullOp: ~B (~B), OpCode: ~s, OpParams: ~p~n", [FullOp, Position, OpCodeString, OpParams]),
+    %% OpCodeString = format_opcode(OpCode),
+    %% io:format("FullOp: ~B (~B), OpCode: ~s, OpParams: ~p~n", [FullOp, Position, OpCodeString, OpParams]),
     Op = maps:get(OpCode, optable()),
     case Op(Config, OpParams, Input, Output) of
         {ok, NewConfig, NewInput, NewOutput} ->
